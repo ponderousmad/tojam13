@@ -31,14 +31,14 @@ var GAME = (function () {
 
     Game.prototype.postLoad = function()
     {
-        this.defaultCube = GEO.makeCube(1.0, null, null, true);
+        this.defaultCube = GEO.makeCube(1.0, null, 1/128, true);
         this.uvCube = GEO.makeCube(1.0, false);
         var thing1 = new BLOB.Thing(this.defaultCube);
         thing1.move(new R3.V(0,0,-1.5));
         this.things.push(thing1);
 
         this.uvCube.image = this.cubeUV;
-        var thing2 = new BLOB.Thing(this.uvCube, null, 1.0/256, false);
+        var thing2 = new BLOB.Thing(this.uvCube, null, 1/256, false);
         thing2.move(new R3.V(0,0,1.5));
         this.things.push(thing2);
 
@@ -56,6 +56,11 @@ var GAME = (function () {
     }
 
     Game.prototype.update = function (now, elapsed, keyboard, pointer, width, height) {
+        var angle = elapsed * 0.001;
+        for (var t = 0; t < this.things.length; ++t) {
+            this.things[t].rotate(angle, new R3.V(0, 1, 0));
+            this.things[t].rotate(angle * 0.5, new R3.V(1, 0, 0));
+        }
     }
 
     Game.prototype.eyePosition = function ()
@@ -86,7 +91,6 @@ var GAME = (function () {
     }
 
     function geoTest() {
-        var cube = GEO.makeCube(1.0, true);
         var cylinder = GEO.makeCylinder(1.0, 1.0, 32, WGL.uvFill(), false);
         var plane = GEO.makePlane(WGL.uvFill());
     }
