@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8"/>
+        <title>ToJam 13</title>
+        <link href="style.css" rel="stylesheet">
+
+        <script type="text/javascript" src="blitblort/test.js"></script>
+        <script type="text/javascript" src="blitblort/blit.js"></script>
+        <script type="text/javascript" src="blitblort/tick.js"></script>
+        <script type="text/javascript" src="blitblort/blort.js"></script>
+        <script type="text/javascript" src="blitblort/io.js"></script>
+        <script type="text/javascript" src="blitblort/entropy.js"></script>
+        <script type="text/javascript" src="blitblort/r2.js"></script>
+        <script type="text/javascript" src="blitblort/r3.js"></script>
+        <script type="text/javascript" src="blitblort/wgl.js"></script>
+        <script type="text/javascript" src="blitblort/blob.js"></script>
+        <script type="text/javascript" src="blitblort/improc.js"></script>
+        <script type="text/javascript" src="blitblort/blump.js"></script>
+        <script type="text/javascript" src="blitblort/main.js"></script>
+        <script type="text/javascript" src="src/game.js"></script>
+    </head>
+    <body>
+        <div class="wrapper" id="wrapper">
+            <canvas id="canvas3D" width="800" height="600">
+                Sorry, your browser doesn't support the &lt;canvas&gt; element.
+            </canvas>
+        </div>
+        <div class="controls" id="controls">
+            <div class="menuBorder">
+                <div class="menuToggle">
+                    <a href="javascript:void(0)" id="menuButton"><div class="hamburger"></div></a>
+                </div>
+            </div>
+                <form>
+                    <div>
+                    </div>
+                    <button id="buttonClipboard" type="button">Copy To Clipboard</button>
+                    <button id="buttonEdit" type="button">Toggle Edit Mode</button>
+                </form>
+                <textarea id="textData" rows="10" cols="34"></textarea>
+            </div>
+        </div>
+        <script id="vertex-test" type="x-shader/x-vertex">
+            attribute vec3 aPos;
+            attribute vec2 aUV;
+            attribute vec4 aColor;
+
+            uniform mat4 uMVPMatrix;
+
+            varying highp vec2 vUV;
+            varying lowp vec4 vColor;
+
+            void main(void) {
+                gl_Position = uMVPMatrix * vec4(aPos, 1.0);
+                vUV = aUV;
+                vColor = aColor;
+            }
+        </script>
+        <script id="fragment-test" type="x-shader/x-fragment">
+            varying highp vec2 vUV;
+            varying lowp vec4 vColor;
+            uniform sampler2D uSampler;
+            uniform lowp vec4 uTint;
+            void main(void) {
+                mediump vec4 texel = texture2D(uSampler, vec2(vUV.s, vUV.t)) * vColor;
+                texel = vec4(uTint.rgb + texel.rgb * (1.0-uTint.a), texel.a);
+                gl_FragColor = texel;
+            }
+        </script>
+    </body>
+</html>
