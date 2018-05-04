@@ -31,14 +31,14 @@ var GAME = (function () {
 
     Game.prototype.postLoad = function()
     {
-        this.defaultCube = GEO.makeCube(1.0, true);
+        this.defaultCube = GEO.makeCube(1.0, null, null, true);
         this.uvCube = GEO.makeCube(1.0, false);
         var thing1 = new BLOB.Thing(this.defaultCube);
         thing1.move(new R3.V(0,0,-1.5));
         this.things.push(thing1);
 
         this.uvCube.image = this.cubeUV;
-        var thing2 = new BLOB.Thing(this.uvCube);
+        var thing2 = new BLOB.Thing(this.uvCube, null, 1.0/256, false);
         thing2.move(new R3.V(0,0,1.5));
         this.things.push(thing2);
 
