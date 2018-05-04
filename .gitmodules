@@ -1,0 +1,3 @@
+[submodule "blitblort"]
+	path = blitblort
+	url = https://github.com/ponderousmad/blitblort.git
