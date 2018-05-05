@@ -31,8 +31,8 @@ var GAME = (function () {
 
     Game.prototype.postLoad = function()
     {
-        this.defaultCube = GEO.makeCube(1.0, null, 1/128, true, true);
-        this.uvCube = GEO.makeCube(1.0, null, 1/256, false, true);
+        this.defaultCube = GEO.makeCube(1.0, null, 1/128, true, false);
+        this.uvCube = GEO.makeCube(1.0, null, 1/256, false, false);
         var thing1 = new BLOB.Thing(this.defaultCube);
         thing1.move(new R3.V(0,0,-1.5));
         this.things.push(thing1);
@@ -46,7 +46,9 @@ var GAME = (function () {
     }
 
     Game.prototype.setupRoom = function (room) {
-        this.program = room.programFromElements("vertex-test", "fragment-test", true, false, true);
+        room.light = { position: new R3.V(0,2,0) };
+
+        this.program = room.programFromElements("vertex-test", "fragment-test", true, true, true, true);
 
         room.viewer.near = 0.05;
         room.viewer.far = 15;
