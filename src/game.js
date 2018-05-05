@@ -17,10 +17,10 @@ var GAME = (function () {
         this.size = 20;
     }
 
-    Bean.prototype.draw = function (context, images, bounds) {
+    Bean.prototype.draw = function (context, images, bounds, captured) {
         context.save();
         var pos = bounds.interpolate(this.position),
-            tint = this.selected ? [1, .5, .5] : null;
+            tint = captured ?  [0, 1, 0] : (this.selected ? [1, .5, .5] : null);
         context.translate(pos.x, pos.y);
         context.rotate(this.angle);
         BLIT.draw(
@@ -43,6 +43,7 @@ var GAME = (function () {
         this.lastTouchID = null;
         this.openLoop = [];
         this.closedLoop = null;
+        this.captured = null;
 
         this.closeDraw = null;
         this.lastTouchPos = null;
@@ -84,7 +85,7 @@ var GAME = (function () {
     }
 
     BeanPatch.prototype.drawSelection = function (context, images, bounds, selection, closed, opposite) {
-        var poly = this.selectionToPoly(selection, bounds, opposite),
+        var poly = this.selectionToPoly(selection, bounds, !closed && !opposite),
             tint = opposite ? [.5,.5, 1, .5] : [1, .5, .5, .5];
 
         if (closed)
@@ -118,7 +119,7 @@ var GAME = (function () {
         }
     }
 
-    BeanPatch.prototype.selectionToPoly = function (selection, bounds, opposite) {
+    BeanPatch.prototype.selectionToPoly = function (selection, bounds, includeLastTouch) {
         var poly = [];
         for (var s = 0; s < (selection.length - 1); ++s) {
             poly.push(new R2.Segment(
@@ -126,8 +127,7 @@ var GAME = (function () {
                 bounds.interpolate(selection[s+1].position)
             ));
         }
-        if(!opposite && selection.length > 0 && this.lastTouchPos)
-        {
+        if(includeLastTouch && selection.length > 0 && this.lastTouchPos) {
             poly.push(new R2.Segment(
                 bounds.interpolate(selection[selection.length-1].position),
                 bounds.interpolate(this.lastTouchPos)
@@ -136,24 +136,70 @@ var GAME = (function () {
         return poly;
     }
 
-    BeanPatch.prototype.selectBean = function (bean) {
-        bean.selected = true;
-        this.openLoop.push(bean);
+    function checkWinding(edge, test) {
+        if(!edge.intersects(test)) {
+            return 0;
+        }/*
+        else if(edge.direction().cross(test.direction()) > 0) {
+            return 1;
+        } else {
+            return -1;
+        }*/
+        return 1;
     }
 
-    BeanPatch.prototype.closeLoop = function (bean) {
+    function isInPoly(poly, point) {
+        var testSegment = new R2.Segment(0, 0, point.x, point.y),
+            windingCount = 0;
+
+        for(var l = 0; l < poly.length; ++l) {
+            windingCount += checkWinding(poly[l], testSegment);
+        }
+        return windingCount % 2 == 1;
+    }
+
+    BeanPatch.prototype.selectBean = function (bean) {
+        if (this.openLoop) {
+            bean.selected = true;
+            this.openLoop.push(bean);
+        }
+    }
+
+    function removeItems(list, toRemove) {
+        for (var i = 0; i < toRemove.length; ++i) {
+            var index = list.indexOf(toRemove[i]);
+            if(index >= 0) {
+                list.splice(index, 1);
+            }
+        }
+    }
+
+    BeanPatch.prototype.closeLoop = function (bean, otherPatch) {
         this.closedLoop = this.openLoop;
         this.closedLoop.push(bean);
         this.closeDraw = CLOSE_DRAW_TIMER;
-        this.openLoop = [];
+        this.openLoop = null;
+
+        var poly = this.selectionToPoly(this.closedLoop, new R2.AABox(0, 0, 1, 1), false);
+
+        otherPatch.captured = [];
+        for (var b = 0; b < otherPatch.beans.length; ++b) {
+            var bean = otherPatch.beans[b];
+
+            if (isInPoly(poly, bean.position)) {
+                bean.selected = false;
+                otherPatch.captured.push(bean);
+            }
+        }
+        if (otherPatch.openLoop) {
+            removeItems(otherPatch.openLoop, otherPatch.captured);
+            removeItems(otherPatch.beans, otherPatch.captured);
+        }
     }
 
-    BeanPatch.prototype.finalizeLoop = function () {
+    BeanPatch.prototype.finalizeLoop = function (otherPatch) {
         this.closeDraw = null;
-        for (var b = 0; b < this.closedLoop.length - 1; ++b) {
-            var bean = this.closedLoop[b];
-            this.beans.splice(this.beans.indexOf(bean), 1);
-        }
+        removeItems(this.beans, this.closedLoop);
         this.closedLoop = null;
     }
 
@@ -161,30 +207,45 @@ var GAME = (function () {
         if (this.closeDraw != null) {
             this.closeDraw -= elapsed;
             if (this.closeDraw < 0) {
-                this.finalizeLoop();
+                this.finalizeLoop(otherPatch);
             }
         }
         this.lastTouchPos = null;
         for (var t = 0; t < touches.length; ++t) {
             var touchPoint = touches[t];
-            for (var b = 0; b < this.beans.length; ++b) {
-                var bean = this.beans[b],
-                    distance = R2.pointDistance(bean.position, touchPoint);
-                if (distance < BEAN_TOUCH_RADIUS) {
-                    if(!bean.selected) {
-                        this.selectBean(bean);
-                    } else if(this.openLoop.length > 2 && this.openLoop[0] == bean) {
-                        this.closeLoop(bean);
+            if(this.openLoop != null)
+            {
+                for (var b = 0; b < this.beans.length; ++b) {
+                    var bean = this.beans[b],
+                        distance = R2.pointDistance(bean.position, touchPoint);
+                    if (distance < BEAN_TOUCH_RADIUS) {
+                        if(!bean.selected && !bean.captured) {
+                            this.selectBean(bean);
+                        } else if(this.openLoop.length > 2 && this.openLoop[0] == bean) {
+                            this.closeLoop(bean, otherPatch);
+                        }
                     }
                 }
             }
             this.lastTouchPos = touchPoint;
         }
+
+        if (!this.lastTouchPos) {
+            if (this.openLoop) {
+                for(var o = 0; o < this.openLoop.length; ++o)
+                {
+                    this.openLoop[o].selected = false;
+                }
+            }
+            this.openLoop = [];
+        }
     }
 
     BeanPatch.prototype.drawSelections = function (context, images, bounds, opposite) {
-        this.drawSelection(context, images, bounds, this.openLoop, false, opposite);
-        if(this.closedLoop) {
+        if (this.openLoop) {
+            this.drawSelection(context, images, bounds, this.openLoop, false, opposite);
+        }
+        if (this.closedLoop) {
             this.drawSelection(context, images, bounds, this.closedLoop, true, opposite);
         }
     }
@@ -192,7 +253,12 @@ var GAME = (function () {
     BeanPatch.prototype.draw = function (context, images, bounds) {
         this.drawSelections(context, images, bounds, false);
         for (var b = 0; b < this.beans.length; ++b) {
-            this.beans[b].draw(context, images, bounds);
+            this.beans[b].draw(context, images, bounds, false);
+        }
+        if(this.captured) {
+            for (var c = 0; c < this.captured.length; ++c) {
+                this.captured[c].draw(context, images, bounds, true);
+            }
         }
     }
 
