@@ -1,109 +1,133 @@
 var GAME = (function () {
     "use strict";
 
-    function Game(viewport) {
-        this.clearColor = [0,0,0,1];
-        this.maximize = viewport === "safe";
+    function Images(batch) {
+        this.bean = batch.load("bean.png");
+    }
+
+    function Bean(position, angle) {
+        this.position = position;
+        this.angle = angle;
+        this.selectionOrder = -1;
+        this.size = 20;
+    }
+
+    Bean.prototype.draw = function (context, images, bounds)
+    {
+        context.save();
+        var x = bounds.left + Math.floor(this.position.x * bounds.width),
+            y = bounds.top + Math.floor(this.position.y * bounds.height);
+        context.translate(x, y);
+        context.rotate(this.angle);
+        BLIT.draw(
+            context, images.bean,
+            0, 0,
+            BLIT.ALIGN.Center,
+            this.size, this.size
+        );
+        context.restore();
+    }
+
+    function Player(direction) {
+        this.direction = direction;
+    }
+
+    function BeanPatch() {
+        this.beans = [];
+    }
+
+    BeanPatch.prototype.sproutAt = function(position, angle) {
+        this.beans.push(new Bean(position, angle));
+    }
+
+    BeanPatch.prototype.sprout = function(entropy) {
+        this.sproutAt(randomPoint(entropy), R2.FULL_CIRCLE * entropy.random());
+    }
+
+    BeanPatch.prototype.draw = function(context, images, bounds) {
+        for (var b = 0; b < this.beans.length; ++b) {
+            this.beans[b].draw(context, images, bounds);
+        }
+    }
+
+    function randomPoint(entropy) {
+        return new R2.V(entropy.random(), entropy.random());
+    }
+
+    function Game(height) {
+        this.clearColor = [0,0,1,1];
+        this.maximize = true;
         this.updateInDraw = true;
         this.preventDefaultIO = true;
-        this.viewport = viewport ? viewport : "canvas";
-        this.program = null;
 
-        this.eyeHeight = 1.0;
-        this.things = [];
         this.loadState = "loading";
-        this.tint = 0;
+        this.split = height / 2;
 
         this.setup();
     }
 
-    Game.prototype.setup = function ()
-    {
+    Game.prototype.setup = function () {
         var self = this;
-        this.batch = new BLIT.Batch("blitblort/images/", function() {
+        this.batch = new BLIT.Batch("images/", function() {
             self.postLoad();
         });
 
-        this.cubeUV = this.batch.load("cubeUV.png");
+        this.images = new Images(this.batch);
 
         this.batch.commit();
     }
 
-    Game.prototype.postLoad = function()
-    {
-        this.defaultCube = GEO.makeCube(1.0, null, 1/128, true, false);
-        this.uvCube = GEO.makeCube(1.0, null, 1/256, false, false);
-        var thing1 = new BLOB.Thing(this.defaultCube);
-        thing1.move(new R3.V(0,0,-1.5));
-        this.things.push(thing1);
+    Game.prototype.postLoad = function() {
+        this.patches = [
+            new BeanPatch(),
+            new BeanPatch()
+        ];
 
-        this.uvCube.image = this.cubeUV;
-        var thing2 = new BLOB.Thing(this.uvCube);
-        thing2.move(new R3.V(0,0,1.5));
-        this.things.push(thing2);
+        this.entropy = new ENTROPY.Entropy(12334);
+        for (var p = 0; p < this.patches.length; ++p) {
+            this.sproutBeans(p, 10, this.entropy);
+        }
 
         this.loadState = null;
     }
 
-    Game.prototype.setupRoom = function (room) {
-        room.light = { position: new R3.V(0,2,0) };
-
-        this.program = room.programFromElements("vertex-test", "fragment-test", true, true, true, true);
-
-        room.viewer.near = 0.05;
-        room.viewer.far = 15;
-        room.gl.enable(room.gl.CULL_FACE);
-        room.gl.blendFunc(room.gl.SRC_ALPHA, room.gl.ONE_MINUS_SRC_ALPHA);
-        room.gl.enable(room.gl.BLEND);
-    }
-
-    Game.prototype.update = function (now, elapsed, keyboard, pointer, width, height) {
-        var angle = elapsed * 0.001;
-        for (var t = 0; t < this.things.length; ++t) {
-            this.things[t].rotate(angle, new R3.V(0, 1, 0));
-            this.things[t].rotate(angle * 0.5, new R3.V(0, 0, 1));
+    Game.prototype.sproutBeans = function(patchIndex, count, entropy) {
+        var patch = this.patches[patchIndex];
+        for (var b = 0; b < count; ++b) {
+            patch.sprout(entropy);
         }
     }
 
-    Game.prototype.eyePosition = function ()
-    {
-        return new R3.V(-5, this.eyeHeight, 0);
+    Game.prototype.update = function (now, elapsed, keyboard, pointer, width, height) {
+        this.split = height / 2;
     }
 
-    Game.prototype.render = function (room, width, height) {
-        room.clear(this.clearColor);
+    Game.prototype.draw = function (context, width, height) {
         if (this.loadState !== null) {
             return;
         }
 
-        var tintUniform = room.gl.getUniformLocation(this.program.shader, "uTint");
-        room.gl.uniform4f(tintUniform, 0.0, 0.0, 0.0, this.tint);
-
-        if (room.viewer.showOnPrimary()) {
-            var eye = this.eyePosition();
-            room.viewer.positionView(eye, new R3.V(0, 0, 0), new R3.V(0, 1, 0));
-            room.setupView(this.program, this.viewport);
-            room.gl.depthMask(true);
-
-            for (var t = 0; t < this.things.length; ++t) {
-                var thing = this.things[t];
-                thing.render(room, this.program);
-            }
-        }
-    }
-
-    function geoTest() {
-        var cylinder = GEO.makeCylinder(1.0, 1.0, 32, WGL.uvFill(), false);
-        var plane = GEO.makePlane(WGL.uvFill());
+        var border = 10,
+            bounds = new R2.AABox(border, border, width - 2 * border, this.split - 2 * border);
+        context.strokeStyle = "rgba(128, 128, 128, 255)";
+        context.strokeRect(0, this.split, width, 1);
+        context.save();
+        context.translate(0, this.split);
+        this.patches[0].draw(context, this.images, bounds);
+        context.restore();
+        context.save();
+        context.translate(0, this.split);
+        context.scale(1, -1);
+        this.patches[1].draw(context, this.images, bounds);
+        context.restore();
     }
 
     function start() {
         if (MAIN.runTestSuites() === 0) {
             console.log("All Tests Passed!");
-            geoTest();
         }
-        var canvas = document.getElementById("canvas3D"),
-            game = new Game("safe");
+        var canvas = document.getElementById("canvas"),
+            game = new Game(canvas.height);
         game.inputElement = document;
         MAIN.start(canvas, game);
 
