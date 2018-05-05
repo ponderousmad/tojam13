@@ -18,14 +18,16 @@ var GAME = (function () {
     Bean.prototype.draw = function (context, images, bounds) {
         context.save();
         var pos = bounds.interpolate(this.position),
-            tint = this.selectionOrder != UNSELECTED ? [255, 128, 128] : null;
+            tint = this.selectionOrder != UNSELECTED ? [1, .5, .5] : null;
         context.translate(pos.x, pos.y);
         context.rotate(this.angle);
         BLIT.draw(
             context, images.bean,
             0, 0,
             BLIT.ALIGN.Center,
-            this.size, this.size
+            this.size, this.size,
+            BLIT.MIRROR.None,
+            tint
         );
         context.restore();
     }
@@ -36,6 +38,7 @@ var GAME = (function () {
 
     function BeanPatch() {
         this.beans = [];
+        this.lastBean = null;
         this.nextSelection = 0;
     }
 
@@ -71,21 +74,17 @@ var GAME = (function () {
         return selection;
     }
 
-    function valueToByte(value)
-    {
+    function valueToByte(value) {
         return Math.floor(value * 255);
     }
 
-    function tintToStyle(tint)
-    {
-        var style = "rgba(" +
+    function tintToStyle(tint) {
+        return "rgba(" +
             valueToByte(tint[0]) + "," +
             valueToByte(tint[1]) + "," +
             valueToByte(tint[2]) + "," +
             valueToByte(tint[3]) +
         ")";
-        console.log(style);
-        return(style);
     }
 
     BeanPatch.prototype.drawSelection = function (context, images, bounds, selection, closed, opposite) {
@@ -134,8 +133,24 @@ var GAME = (function () {
         return poly;
     }
 
-    BeanPatch.prototype.update = function (elapsed, bounds, otherPatch) {
-
+    BeanPatch.prototype.update = function (elapsed, bounds, otherPatch, touches) {
+        for (var t = 0; t < touches.length; ++t) {
+            var touchPoint = touches[t];
+            console.log("Checking touch at:");
+            console.log(touchPoint)
+            for (var b = 0; b < this.beans.length; ++b) {
+                var bean = this.beans[b],
+                    distance = R2.pointDistance(bean.position, touchPoint);
+                console.log(distance);
+                if(distance < 0.05) {
+                    if(bean.selectionOrder === UNSELECTED) {
+                        this.lastBean = bean;
+                        bean.selectionOrder = this.nextSelection;
+                        ++this.nextSelection;
+                    }
+                }
+            }
+        }
     }
 
     BeanPatch.prototype.draw = function (context, images, bounds) {
@@ -184,7 +199,7 @@ var GAME = (function () {
             new BeanPatch()
         ];
 
-        this.entropy = new ENTROPY.Entropy(12334);
+        this.entropy = ENTROPY.makeRandom();
         for (var p = 0; p < this.patches.length; ++p) {
             this.sproutBeans(p, 10, this.entropy);
         }
@@ -197,10 +212,19 @@ var GAME = (function () {
         var patch = this.patches[patchIndex];
         for (var b = 0; b < count; ++b) {
             patch.sprout(entropy);
-            if (b < 3) {
-                patch.beans[b].selectionOrder = b;
-            }
         }
+    }
+
+    Game.prototype.mapLocation = function (width, location, touches) {
+        var touchPatch = 1;
+        if(location.x > this.split)
+        {
+            touchPatch = 0;
+            location.x = width - location.x;
+        }
+        location.x -= this.bounds.left;
+        location.y -= this.bounds.top;
+        touches[touchPatch].push(new R2.V(1 - location.x / this.bounds.width, location.y / this.bounds.height));
     }
 
     Game.prototype.update = function (now, elapsed, keyboard, pointer, width, height) {
@@ -213,8 +237,22 @@ var GAME = (function () {
         this.split = width / 2;
         this.bounds = new R2.AABox(border, border, this.split - 2 * border, height - 2 * border);
 
-        this.patches[0].update(elapsed, this.bounds, this.patches[1]);
-        this.patches[1].update(elapsed, this.bounds, this.patches[0]);
+        var touches = [
+            [],
+            []
+        ]
+
+        if(pointer.touch.touches.length > 0) {
+            for(var t = 0; t < pointer.touch.touches.length; ++t) {
+                var touch = pointer.touch.touches[t];
+                this.mapLocation(width, new R2.V(touch.clientX, touch.clientY), touches);
+            }
+        } else if(pointer.location()) {
+            this.mapLocation(width, pointer.location(), touches);
+        }
+
+        this.patches[0].update(elapsed, this.bounds, this.patches[1], touches[0]);
+        this.patches[1].update(elapsed, this.bounds, this.patches[0], touches[1]);
     }
 
     Game.prototype.draw = function (context, width, height) {
@@ -246,8 +284,7 @@ var GAME = (function () {
       
         if(!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
           requestFullScreen.call(docEl);
-        }
-        else {
+        } else {
           cancelFullScreen.call(doc);
         }
     }
