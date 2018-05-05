@@ -182,9 +182,18 @@ var GAME = (function () {
 
         var poly = this.selectionToPoly(this.closedLoop, new R2.AABox(0, 0, 1, 1), false);
 
+        for (var b = 0; b < this.beans.length; ++b) {
+            var bean = this.beans[b];
+            if (!bean.selected) {
+                if (isInPoly(poly, bean.position)) {
+                    bean.selected = true;
+                }
+            }
+        }
+
         otherPatch.captured = [];
-        for (var b = 0; b < otherPatch.beans.length; ++b) {
-            var bean = otherPatch.beans[b];
+        for (var c = 0; c < otherPatch.beans.length; ++c) {
+            var bean = otherPatch.beans[c];
 
             if (isInPoly(poly, bean.position)) {
                 bean.selected = false;
@@ -199,8 +208,16 @@ var GAME = (function () {
 
     BeanPatch.prototype.finalizeLoop = function (otherPatch) {
         this.closeDraw = null;
+        for (var b = 0; b < this.beans.length; ++b) {
+            var bean = this.beans[b];
+            if (bean.selected && this.closedLoop.indexOf(bean) < 0) {
+                this.closedLoop.push(bean);
+            }
+        }
+
         removeItems(this.beans, this.closedLoop);
         this.closedLoop = null;
+        otherPatch.captured = null;
     }
 
     BeanPatch.prototype.update = function (elapsed, bounds, otherPatch, touches) {
