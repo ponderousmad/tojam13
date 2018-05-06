@@ -63,30 +63,39 @@ var GAME = (function () {
         return this.drawLevel + this.pendingDraw > this.level;
     }
 
-    PowerBar.prototype.draw = function (context, images, bounds, flip) {
-        var left = Math.floor(bounds.left * 0.1),
-            width = Math.floor(bounds.left * 0.5),
-            top = 0,
-            bottom = (bounds.bottom + bounds.top) - top, // Reconstruct width;
-            unitCount = (bottom - top) / MAX_POWER,
+    PowerBar.prototype.drawBar = function (context, swapped, barEdge, barWidth, start, size) {
+        if (swapped) {
+            context.fillRect(start, barEdge, size, barWidth);
+        } else {
+            context.fillRect(barEdge, start, barWidth, size);
+        }
+    }
+
+    PowerBar.prototype.draw = function (context, images, bounds, swapped, flip) {
+        var border = swapped ? bounds.top : bounds.left,
+            barEdge = Math.floor(bounds.left * 0.1),
+            barWidth = Math.floor(bounds.left * 0.5),
+            min = 0,
+            max = swapped ? (bounds.right + bounds.left) - min: // Reconstruct width;
+                            (bounds.bottom + bounds.top) - min, // Reconstruct height;
+            unitCount = (max - min) / MAX_POWER,
             overStyle = "rgba(255,0,0,255)";
         context.save();
         context.fillStyle = "rgba(0,128,0,255)";
         var size = unitCount * this.level,
-            start = flip ? bottom - size : top;
-        context.fillRect(left, start, width, size); 
-
+            start = flip ? max - size : min;
+        this.drawBar(context, swapped, barEdge, barWidth, start, size);
         size = unitCount * this.drawLevel;
-        start = flip ? bottom - size : top;
+        start = flip ? min - size : max;
         if (size > 0) {
             context.fillStyle = this.isEmpty() ? overStyle : "rgba(196,255,0,255)";
-            context.fillRect(left, start, width, size);
+            this.drawBar(context, swapped, barEdge, barWidth, start, size);
         }
         if (this.pendingDraw > 0) {
             var pendingSize = this.pendingDraw * unitCount;
             start = flip ? start - pendingSize : start + size;
             context.fillStyle = this.isEmpty() ? overStyle : "rgba(255,196,0,255)";
-            context.fillRect(left, start, width, pendingSize);
+            this.drawBar(context, swapped, barEdge, barWidth, start, size);
         }
         context.restore();
     }
@@ -426,7 +435,7 @@ var GAME = (function () {
         }
     }
 
-    BeanPatch.prototype.draw = function (context, images, bounds, patchIndex) {
+    BeanPatch.prototype.draw = function (context, images, bounds, swapped, patchIndex) {
         this.drawSelections(context, images, bounds, false);
         for (var b = 0; b < this.beans.length; ++b) {
             this.beans[b].draw(context, images, bounds, false);
@@ -436,7 +445,7 @@ var GAME = (function () {
                 this.captured[c].draw(context, images, bounds, true);
             }
         }
-        this.powerBar.draw(context, images, bounds, patchIndex === 0);
+        this.powerBar.draw(context, images, bounds, swapped, patchIndex === 0);
     }
 
     BeanPatch.prototype.drawOpposite = function (context, images, bounds) {
@@ -454,6 +463,7 @@ var GAME = (function () {
         this.preventDefaultIO = true;
 
         this.loadState = "loading";
+        this.swapped = height > width;
         this.split = Math.max(width, height) / 2;
         this.size = Math.min(width, height);
         this.gameOverScreen = null;
@@ -498,19 +508,27 @@ var GAME = (function () {
     Game.prototype.mapToBounds = function (patch, location) {
         var x = location.x,
             y = location.y;
-        if(patch === 0) {
-            x = this.split - x;
+        if (this.swapped) {
+            if(patch === 0) {
+                y = this.split - y;
+            } else {
+                y = y - this.split;
+            }
         } else {
-            x = x - this.split;
+            if(patch === 0) {
+                x = this.split - x;
+            } else {
+                x = x - this.split;
+            }
         }
         x -= this.bounds.left;
-        return new R2.V(x / this.bounds.width, (y - this.bounds.top) / this.bounds.height);
+        y -= this.bounds.top;
+        return new R2.V(x / this.bounds.width, y / this.bounds.height);
     }
 
     Game.prototype.mapLocation = function (location, touches) {
         var touchPatch = 0;
-        if(location.x > this.split)
-        {
+        if (this.swapped ? location.y > this.split : location.x > this.split) {
             touchPatch = 1;
         }
         touches[touchPatch].push(this.mapToBounds(touchPatch, location));
@@ -523,8 +541,13 @@ var GAME = (function () {
 
         var border = Math.floor(height * BORDER_FRACTION);
 
-        this.split = width / 2;
-        this.bounds = new R2.AABox(border, border, this.split - 2 * border, height - 2 * border);
+        this.swapped = height > width;
+        this.split = Math.max(width, height) / 2;
+        if (this.swapped) {
+            this.bounds = new R2.AABox(border, border, width - 2 * border, this.split - 2 * border);
+        } else {
+            this.bounds = new R2.AABox(border, border, this.split - 2 * border, height - 2 * border);
+        }
 
         if (this.gameOverScreen) {
             if (this.gameOverScreen.update(elapsed, keyboard, pointer, width, height)) {
@@ -594,18 +617,28 @@ var GAME = (function () {
             return;
         }
 
-        context.strokeStyle = "rgba(128, 128, 128, 255)";
-        context.strokeRect(this.split, 0, 1, height);
         context.save();
-        context.translate(this.split, 0);
-        context.scale(-1, 1);
+        context.strokeStyle = "rgba(128, 128, 128, 255)";
+        if (this.swapped) {
+            context.strokeRect(0, this.split, width, 1);
+            context.translate(0, this.split);
+            context.scale(1, -1);
+        } else {
+            context.strokeRect(this.split, 0, 1, height);
+            context.translate(this.split, 0);
+            context.scale(-1, 1);
+        }
         this.patches[1].drawOpposite(context, this.images, this.bounds);
-        this.patches[0].draw(context, this.images, this.bounds, 0);
+        this.patches[0].draw(context, this.images, this.bounds, this.swapped, 0);
         context.restore();
         context.save();
-        context.translate(this.split, 0);
+        if (this.swapped) {
+            context.translate(0, this.split);
+        } else {
+            context.translate(this.split, 0);
+        }
         this.patches[0].drawOpposite(context, this.images, this.bounds);
-        this.patches[1].draw(context, this.images, this.bounds, 1);
+        this.patches[1].draw(context, this.images, this.bounds, this.swapped, 1);
         context.restore();
 
         if(this.gameOverScreen)
