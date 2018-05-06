@@ -466,7 +466,7 @@ var GAME = (function () {
         this.swapped = height > width;
         this.split = Math.max(width, height) / 2;
         this.size = Math.min(width, height);
-        this.gameOverScreen = null;
+        this.currentScreen = null;
 
         this.entropy = ENTROPY.makeRandom();
 
@@ -497,7 +497,7 @@ var GAME = (function () {
                 patch.sprout(this.entropy, this.size);
             }
         }
-        this.gameOverScreen = null;
+        this.currentScreen = null;
     }
 
     Game.prototype.postLoad = function () {
@@ -534,11 +534,13 @@ var GAME = (function () {
         touches[touchPatch].push(this.mapToBounds(touchPatch, location));
     }
 
-    Game.prototype.update = function (now, elapsed, keyboard, pointer, width, height) {
-        if (this.loadState !== null) {
-            return;
+    Game.prototype.goto = function (target) {
+        if (target == "RESTART") {
+            this.reset();
         }
+    }
 
+    Game.prototype.update = function (now, elapsed, keyboard, pointer, width, height) {
         var border = Math.floor(height * BORDER_FRACTION);
 
         this.swapped = height > width;
@@ -549,10 +551,15 @@ var GAME = (function () {
             this.bounds = new R2.AABox(border, border, this.split - 2 * border, height - 2 * border);
         }
 
-        if (this.gameOverScreen) {
-            if (this.gameOverScreen.update(elapsed, keyboard, pointer, width, height)) {
-                this.reset();
+        if (this.currentScreen) {
+            var target = this.currentScreen.update(elapsed, keyboard, pointer, width, height, this.swapped);
+            if (target) {
+                this.goto(target);
             }
+            return;
+        }
+
+        if (this.loadState !== null) {
             return;
         }
 
@@ -585,17 +592,46 @@ var GAME = (function () {
     function GameOverScreen(message) {
         this.message = message;
         this.showTime = 1000;
+        this.isOverlay = true;
     }
 
-    GameOverScreen.prototype.update = function (elapsed, keyboard, pointer, width, height) {
+    GameOverScreen.prototype.update = function (elapsed, keyboard, pointer, width, height, swapped) {
         this.showTime -= elapsed;
         if (this.showTime < 0 && (keyboard.keysDown() > 0 || pointer.activated())) {
-            return(true);
+            return("RESTART");
         }
-        return(false);
+        return(null);
     }
 
-    GameOverScreen.prototype.draw = function (context, width, height) {
+    GameOverScreen.prototype.draw = function (context, width, height, swapped) {
+        context.save();
+        context.font = "40px sans-serif";
+        BLIT.centeredText(
+            context, this.message,
+            width / 2, height / 2,
+            "rgba(255,255,255,255)",
+            "rgba(128,128,128,255)",
+            2
+        );
+        context.restore();
+    }
+
+    function OverlayScreen(image, target, showTime) {
+        this.image = image;
+        this.showTime = showTime | 1000;
+        this.target = target;
+        this.isOverlay = true;
+    }
+
+    OverlayScreen.prototype.update = function (elapsed, keyboard, pointer, width, height, swapped) {
+        this.showTime -= elapsed;
+        if (this.showTime < 0 && (keyboard.keysDown() > 0 || pointer.activated())) {
+            return(this.target);
+        }
+        return(null);
+    }
+
+    OverlayScreen.prototype.draw = function (context, width, height, swapped) {
         context.save();
         context.font = "40px sans-serif";
         BLIT.centeredText(
@@ -609,10 +645,15 @@ var GAME = (function () {
     }
 
     Game.prototype.startEndGame = function (patchIndex) {
-        this.gameOverScreen = new GameOverScreen("The " + (patchIndex ? "Red" : "Blue") + " player is out of moves!");
+        this.currentScreen = new GameOverScreen("The " + (patchIndex ? "Red" : "Blue") + " player is out of moves!");
     }
 
     Game.prototype.draw = function (context, width, height) {
+        if (this.currentScreen && !this.currentScreen.isOverlay) {
+            this.currentScreen.draw(context, width, height, this.swapped);
+            return;
+        }
+
         if (this.loadState !== null) {
             return;
         }
@@ -641,9 +682,9 @@ var GAME = (function () {
         this.patches[1].draw(context, this.images, this.bounds, this.swapped, 1);
         context.restore();
 
-        if(this.gameOverScreen)
+        if(this.currentScreen)
         {
-            this.gameOverScreen.draw(context, width, height);
+            this.currentScreen.draw(context, width, height, this.swapped);
         }
     }
 
