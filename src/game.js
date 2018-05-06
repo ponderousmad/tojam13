@@ -527,7 +527,10 @@ var GAME = (function () {
         this.bounds = new R2.AABox(border, border, this.split - 2 * border, height - 2 * border);
 
         if (this.gameOverScreen) {
-            this.gameOverScreen.update(elapsed, keyboard, pointer, width, height);
+            if (this.gameOverScreen.update(elapsed, keyboard, pointer, width, height)) {
+                this.reset();
+            }
+            return;
         }
 
         var touches = [
@@ -556,18 +559,34 @@ var GAME = (function () {
         }
     }
 
-    function GameOverScreen() {
-
+    function GameOverScreen(message) {
+        this.message = message;
+        this.showTime = 1000;
     }
 
     GameOverScreen.prototype.update = function (elapsed, keyboard, pointer, width, height) {
+        this.showTime -= elapsed;
+        if (this.showTime < 0 && (keyboard.keysDown() > 0 || pointer.activated())) {
+            return(true);
+        }
+        return(false);
     }
 
     GameOverScreen.prototype.draw = function (context, width, height) {
+        context.save();
+        context.font = "40px sans-serif";
+        BLIT.centeredText(
+            context, this.message,
+            width / 2, height / 2,
+            "rgba(255,255,255,255)",
+            "rgba(128,128,128,255)",
+            2
+        );
+        context.restore();
     }
 
     Game.prototype.startEndGame = function (patchIndex) {
-        this.gameOverScreen = new GameOverScreen();
+        this.gameOverScreen = new GameOverScreen("The " + (patchIndex ? "Red" : "Blue") + " player is out of moves!");
     }
 
     Game.prototype.draw = function (context, width, height) {
