@@ -117,9 +117,17 @@ var GAME = (function () {
         this.saved = 0;
         this.captured = 0;
 
-        this.score = 0;
-
         this.powerBar.reset();
+    }
+
+    BeanPatch.prototype.score = function () {
+        var score = 0;
+        score += this.saved * POINTS_PER_SAVE;
+        score += this.captured * POINTS_PER_CAPTURE
+        if (this.beans.length == 0) {
+            score += BEANLESS_BONUS;
+        }
+        return(score);
     }
 
     BeanPatch.prototype.sproutAt = function (position, angle, size) {
@@ -648,6 +656,61 @@ var GAME = (function () {
         this.currentScreen = new GameOverScreen("The " + (patchIndex ? "Red" : "Blue") + " player is out of moves!");
     }
 
+    Game.prototype.drawScore = function (context, width, height, patchIndex) {
+        var patch = this.patches[patchIndex];
+
+        var border = this.bounds.left,
+            pivotX = 0,
+            pivotY = 0,
+            size = 0,
+            rotation = 0;
+        if (patchIndex == 0) {
+            if (this.swapped) {
+                // top edge, rotate 180
+                pivotX = width;
+                pivotY = this.split;
+                size = width;
+                rotation = Math.PI;
+            } else {
+                // left edge, rotate 90 clock
+                pivotX = this.split;
+                pivotY = 0;
+                size = height;
+                rotation = Math.PI / 2;
+            }
+        } else {
+            if (this.swapped) {
+                // bottom edge, unrotated
+                pivotX = 0;
+                pivotY = this.split;
+                size = width;
+            } else {
+                // right edge, rotate 90 counter
+                pivotX = this.split;
+                pivotY = height;
+                size = height;
+                rotation = -Math.PI / 2;
+            }
+        }
+        context.save();
+        context.translate(pivotX, pivotY);
+        if (rotation) {
+            context.rotate(rotation); 
+        }
+        context.font = "20px sans-serif";
+        context.textBaseline = "top";
+        context.fillStyle = patchIndex ? "rgba(255,0,0,255)" : "rgba(0,0,255,255)";
+        var reference = 0;
+        if (this.swapped) {
+            reference = width;
+            context.textAlign = "end";
+        } else {
+            context.textAlign = "start";
+        }
+        context.fillText("Score: " + patch.score(), reference, 2);
+        context.restore();
+    }
+
     Game.prototype.draw = function (context, width, height) {
         if (this.currentScreen && !this.currentScreen.isOverlay) {
             this.currentScreen.draw(context, width, height, this.swapped);
@@ -680,6 +743,13 @@ var GAME = (function () {
         }
         this.patches[0].drawOpposite(context, this.images, this.bounds);
         this.patches[1].draw(context, this.images, this.bounds, this.swapped, 1);
+        context.restore();
+
+        this.drawScore(context, width, height, 0);
+        this.drawScore(context, width, height, 1);
+
+        context.save();
+
         context.restore();
 
         if(this.currentScreen)
