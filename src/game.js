@@ -14,7 +14,9 @@ var GAME = (function () {
         POINTS_PER_SAVE = 50,
         POINTS_PER_CAPTURE = 100,
         DEFAULT_FRAME_TIME = 32,
-        BEANLESS_BONUS = 500;
+        BEANLESS_BONUS = 500,
+        GAME_VOLUME = 0.3,
+        TITLE_VOLUME = 0.9;
 
     function Images(batch, index, other) {
         var BEAN_FRAMES = 12,
@@ -623,6 +625,11 @@ var GAME = (function () {
         this.titleBackground = this.batch.load("titleBackground.jpg");
         this.gameBackground = this.batch.load("gameBackground.jpg");
 
+        var CAN_IDLE_FRAMES = 24,
+            CAN_OPEN_FRAMES = 29;
+        this.canIdle = new BLIT.Flip(this.batch, "canIdle/canIdle_", CAN_IDLE_FRAMES, 2);
+        this.canOpen = new BLIT.Flip(this.batch, "canOpen/canOpen_", CAN_OPEN_FRAMES, 2);
+
         this.batch.commit();
     }
 
@@ -634,8 +641,7 @@ var GAME = (function () {
                 patch.sprout(this.size, this.images[p], this.entropy);
             }
         }
-        this.currentScreen = null;
-        this.background = this.gameBackground;
+        this.currentScreen = new TitleScreen(this.canIdle, this.canOpen);
     }
 
     Game.prototype.postLoad = function () {
@@ -675,6 +681,12 @@ var GAME = (function () {
     Game.prototype.goto = function (target) {
         if (target == "RESTART") {
             this.reset();
+        } else if (target == "FADE") {
+            this.currentScreen = new FadeScreen();
+        } else if (target == "SPLATTER") {
+            this.startSound.play();
+        } else if (target == "START") {
+            this.currentScreen = null;
         }
     }
 
@@ -682,10 +694,11 @@ var GAME = (function () {
         if (this.music === null) {
             if (this.track.isLoaded()) {
                 this.music = this.track;
-                this.music.setVolume(0.3);
+                this.music.setVolume(0.0);
                 this.music.play();
             }
-        } else {
+        } else if (this.currentScreen) {
+            this.music.setVolume(this.currentScreen.volume);
         }
 
         var border = Math.floor(height * BORDER_FRACTION);
@@ -744,18 +757,29 @@ var GAME = (function () {
         }
     }
 
+    function interpolate(start, end, t) {
+        return (start * t + (1 - t) * end);
+    }
+
     function GameOverScreen(movelessIndex, winnerIndex) {
-        this.showTime = 1000;
+        this.showDuration = 1000;
+        this.showTime = this.showDuration;
         this.isOverlay = true;
+        this.isTitle = false;
+        this.titleBackground = false;
         this.drawInHUD = true;
+        this.volume = GAME_VOLUME;
         this.movelessIndex = movelessIndex;
         this.winnerIndex = winnerIndex;
     }
 
     GameOverScreen.prototype.update = function (elapsed, keyboard, pointer, width, height, swapped) {
-        this.showTime -= elapsed;
+        this.showTime -= elapsed;        
         if (this.showTime < 0 && (keyboard.keysDown() > 0 || pointer.activated())) {
+            this.volume = TITLE_VOLUME;
             return("RESTART");
+        } else {
+            this.volume = interpolate(TITLE_VOLUME, GAME_VOLUME, this.showTime / this.showDuration)
         }
         return(null);
     }
@@ -789,28 +813,64 @@ var GAME = (function () {
         context.restore();
     }
 
-    function OverlayScreen(image, target, showTime) {
-        this.image = image;
-        this.showTime = showTime | 1000;
-        this.target = target;
+    function TitleScreen(canIdle, canOpen) {
+        this.idle = canIdle.setupPlayback(DEFAULT_FRAME_TIME, true);
+        this.open = null;
+        this.canOpen = canOpen;
         this.isOverlay = true;
+        this.isTitle = true;
+        this.titleBackground = true;
         this.drawInHUD = false;
+        this.showTime = 1000;
+        this.volume = 1;
     }
 
-    OverlayScreen.prototype.update = function (elapsed, keyboard, pointer, width, height, swapped) {
+    TitleScreen.prototype.update = function (elapsed, keyboard, pointer, width, height, swapped) {
+        this.idle.update(elapsed);
+        if (this.open) {
+            if (this.open.update(elapsed)) {
+                return "FADE";
+            }
+            return null;
+        }
         this.showTime -= elapsed;
         if (this.showTime < 0 && (keyboard.keysDown() > 0 || pointer.activated())) {
-            return(this.target);
+            this.open = this.canOpen.setupPlayback(DEFAULT_FRAME_TIME, false);
+            return "SPLATTER";
         }
         return(null);
     }
 
-    OverlayScreen.prototype.draw = function (context, width, height, swapped, hudIndex) {
+    TitleScreen.prototype.draw = function (context, centerX, centerY, scale) {
+        var flip = this.open !== null ? this.open : this.idle;
+        flip.draw(context, centerX, centerY, BLIT.ALIGN.Center, flip.width * scale, flip.height * scale);
+    }
+
+    function FadeScreen() {
+        this.fadeDuration = 500;
+        this.fadeTime = this.fadeDuration
+        this.isOverlay = true;
+        this.drawInHUD = false;
+        this.isTitle = true;
+        this.titleBackground = false;
+        this.volume = TITLE_VOLUME;
+    }
+
+    FadeScreen.prototype.update = function (elapsed, keyboard, pointer, width, height, swapped) {
+        this.fadeTime -= elapsed;
+        if (this.fadeTime < 0) {
+            this.volume = GAME_VOLUME;
+            return "START";            
+        }
+        this.volume = interpolate(GAME_VOLUME, TITLE_VOLUME, this.fadeTime / this.fadeDuration)
+        return null;
+    }
+
+    FadeScreen.prototype.draw = function (context, centerX, centerY, scale) {
         context.save();
-        context.font = "40px sans-serif";
-        context.textAlign = "center";
-        context.textBaseline = "middle";
-        context.fillText(this.message, width / 2, height / 2);
+        context.globalAlpha = this.fadeTime / this.fadeDuration;
+        context.fillStyle = "rgba(0,0,0,255)";
+        context.fillRect(0, 0, 2 * centerX, 2 * centerY);
         context.restore();
     }
 
@@ -879,16 +939,12 @@ var GAME = (function () {
     }
 
     Game.prototype.draw = function (context, width, height) {
-        if (this.currentScreen && !this.currentScreen.isOverlay) {
-            this.currentScreen.draw(context, width, height, this.swapped, null);
-            return;
-        }
-
         if (this.loadState !== null) {
             return;
         }
 
-        var background = this.background,
+        var isTitle = this.currentScreen && this.currentScreen.isTitle,
+            background = isTitle && this.currentScreen.titleBackground ? this.titleBackground : this.gameBackground,
             centerX = width / 2,
             centerY = height / 2,
             scale = height / background.height;
@@ -900,7 +956,15 @@ var GAME = (function () {
             centerY = -width / 2;
         }
         BLIT.draw(context, background, centerX, centerY, BLIT.ALIGN.Center, background.width * scale, background.height * scale);
+
+        if (isTitle) {
+            this.currentScreen.draw(context, centerX, centerY, scale);
+        }
         context.restore();
+
+        if (isTitle) {
+            return;
+        }
 
         context.save();
         context.strokeStyle = "rgba(128, 128, 128, 255)";
@@ -929,12 +993,7 @@ var GAME = (function () {
         this.drawHUD(context, width, height, 0);
         this.drawHUD(context, width, height, 1);
 
-        context.save();
-
-        context.restore();
-
-        if(this.currentScreen)
-        {
+        if(this.currentScreen) {
             this.currentScreen.draw(context, width, height, this.swapped, null);
         }
     }
