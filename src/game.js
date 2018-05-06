@@ -86,7 +86,7 @@ var GAME = (function () {
             start = flip ? max - size : min;
         this.drawBar(context, swapped, barEdge, barWidth, start, size);
         size = unitCount * this.drawLevel;
-        start = flip ? min - size : max;
+        start = flip ? max - size : min;
         if (size > 0) {
             context.fillStyle = this.isEmpty() ? overStyle : "rgba(196,255,0,255)";
             this.drawBar(context, swapped, barEdge, barWidth, start, size);
@@ -95,7 +95,7 @@ var GAME = (function () {
             var pendingSize = this.pendingDraw * unitCount;
             start = flip ? start - pendingSize : start + size;
             context.fillStyle = this.isEmpty() ? overStyle : "rgba(255,196,0,255)";
-            this.drawBar(context, swapped, barEdge, barWidth, start, size);
+            this.drawBar(context, swapped, barEdge, barWidth, start, pendingSize);
         }
         context.restore();
     }
