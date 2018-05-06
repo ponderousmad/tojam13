@@ -1,8 +1,7 @@
 var GAME = (function () {
     "use strict";
 
-    var UNSELECTED = -1,
-        BEAN_RADIUS = 0.05,
+    var BEAN_RADIUS = 0.05,
         CLOSE_DRAW_TIMER = 500,
         CAPTURE_DELAY = 100,
         LOW_POWER_WARNING_COOLDOWN = 500,
@@ -14,11 +13,24 @@ var GAME = (function () {
         POWER_PER_BEAN = (MAX_POWER - START_POWER) / (2 * BEANS_PER_PLAYER),
         POINTS_PER_SAVE = 50,
         POINTS_PER_CAPTURE = 100,
+        DEFAULT_FRAME_TIME = 32,
         BEANLESS_BONUS = 500;
 
     function Images(batch, index, other) {
-        this.bean = index ? other.bean : batch.load("bean.png");
-        this.line = index ? other.line : batch.load("lineGlow.png");
+        var BEAN_FRAMES = 12,
+            SELECT_FRAMES = 18,
+            DEATH_FRAMES = 12;
+        this.beans = index ? other.beans : [
+            new BLIT.Flip(batch, "beanIdle/beanIdleA_", BEAN_FRAMES, 2),
+            new BLIT.Flip(batch, "beanIdle/beanIdleB_", BEAN_FRAMES, 2),
+            new BLIT.Flip(batch, "beanIdle/beanIdleC_", BEAN_FRAMES, 2)
+        ];
+        var selectBase = index ? "beanSelectRed/beanSelectRed_" : "beanSelectBlue/beanSelectBlue_";
+        this.select = new BLIT.Flip(batch, selectBase, SELECT_FRAMES, 2);
+        this.death = new BLIT.Flip(batch, "beanDeath/beanDeath_", DEATH_FRAMES, 2);
+        this.line = batch.load(index ? "line_red.png" : "line_blue.png");
+        this.dot = batch.load(index ? "dot_red.png" : "dot_blue.png");
+        this.lineBad = index ? other.lineBad : batch.load("line_grey.png");
     }
 
     function makeImages(batch) {
@@ -77,32 +89,56 @@ var GAME = (function () {
         ];
     }
 
-    function Bean(position, angle, size) {
+    function Bean(position, size, images, entropy) {
         this.position = position;
-        this.angle = angle;
-        this.selected = false;
+        var range = Math.PI / 20;
+        this.angle = -range + 2 * range * entropy.random();
+        this.rate = entropy.random() + 0.1;
+        this.idle = entropy.randomElement(images.beans).setupPlayback(DEFAULT_FRAME_TIME, true, entropy.randomInt(1000));
+        this.selectFlip = images.select;
+        this.sel = null;
+        this.death = null;
         this.size = size;
+    }
+
+    Bean.prototype.select = function () {
+        this.sel = this.selectFlip.setupPlayback(DEFAULT_FRAME_TIME, false);
+    }
+
+    Bean.prototype.unselect = function () {
+        this.sel = null;
+    }
+
+    Bean.prototype.isSelected = function() {
+        return this.sel !== null;
     }
 
     Bean.prototype.draw = function (context, images, bounds, captured) {
         context.save();
-        var pos = bounds.interpolate(this.position),
-            tint = captured ?  [0, 1, 0] : (this.selected ? [1, .5, .5] : null);
+        var pos = bounds.interpolate(this.position);
         context.translate(pos.x, pos.y);
         context.rotate(this.angle);
-        BLIT.draw(
-            context, images.bean,
-            0, 0,
-            BLIT.ALIGN.Center,
-            this.size, this.size,
-            BLIT.MIRROR.None,
-            tint
-        );
+        var flip = this.isSelected() ? this.sel : this.idle,
+            scaleFactor = this.isSelected() || captured ? 2 : 2 * 64/96,
+            size = this.size * scaleFactor;
+        if (captured) {
+            if (this.death === null) {
+                this.death = images.death.setupPlayback(DEFAULT_FRAME_TIME, false);
+            }
+            flip = this.death;
+        }
+        flip.draw(context, 0, 0, BLIT.ALIGN.Center, size, size);
         context.restore();
     }
 
     Bean.prototype.update = function (elapsed) {
-
+        this.idle.update(Math.floor(this.rate * elapsed));
+        if (this.isSelected()) {
+            this.sel.update(elapsed);
+        }
+        if (this.death !== null) {
+            this.death.update(elapsed);
+        }
     }
 
     function PowerBar() {
@@ -192,19 +228,19 @@ var GAME = (function () {
         return(score);
     }
 
-    BeanPatch.prototype.sproutAt = function (position, angle, size) {
+    BeanPatch.prototype.sproutAt = function (position, size, images, entropy) {
         for (var b = 0; b < this.beans.length; ++b) {
             if(R2.pointDistance(this.beans[b].position, position) < 2 * BEAN_RADIUS) {
                 return false;
             }
         }
-        this.beans.push(new Bean(position, angle, Math.floor(size * BEAN_RADIUS)));
+        this.beans.push(new Bean(position, Math.floor(size * BEAN_RADIUS), images, entropy));
         return true;
     }
 
-    BeanPatch.prototype.sprout = function (entropy, size) {
+    BeanPatch.prototype.sprout = function (size, images, entropy) {
         var attempts = 0;
-        while (!this.sproutAt(randomPoint(entropy), R2.FULL_CIRCLE * entropy.random(), size)) {
+        while (!this.sproutAt(randomPoint(entropy), size, images, entropy)) {
             ++attempts;
             if (attempts > 1000000) {
                 throw "No place for bean! - too many attempts";
@@ -216,24 +252,16 @@ var GAME = (function () {
         return Math.floor(value * 255);
     }
 
-    function tintToStyle(tint) {
-        return "rgba(" +
-            valueToByte(tint[0]) + "," +
-            valueToByte(tint[1]) + "," +
-            valueToByte(tint[2]) + "," +
-            valueToByte(tint[3]) +
-        ")";
-    }
-
-    BeanPatch.prototype.drawSelection = function (context, images, bounds, selection, closed, opposite) {
-        var poly = this.selectionToPoly(selection, bounds, !closed && !opposite),
-            tint = opposite ? [.5,.5, 1, .5] : [1, .5, .5, .5];
-
+    BeanPatch.prototype.drawSelection = function (context, images, bounds, selection, closed, opposite, index) {
+        var poly = this.selectionToPoly(selection, bounds, !closed && !opposite);
+        context.save();
+        if (opposite) {
+            context.globalAlpha = 0.5;
+        }
         if (closed) {
             context.save();
             context.beginPath();
-            var style = tintToStyle(tint);
-            context.fillStyle = style;
+            context.fillStyle = index ? "rgba(255,0,51)" : "rgba(0,170,255)";
             for (var s = 0; s < poly.length; ++s) {
                 var segment = poly[s];
                 if (s === 0) {
@@ -249,14 +277,21 @@ var GAME = (function () {
         for (var s = 0; s < poly.length; ++s) {
             var segment = poly[s],
                 mid = segment.interpolate(0.5),
-                length = segment.length();
+                length = segment.length(),
+                dot = images.dot;
+
+            if (opposite) {
+                BLIT.draw(context, dot, segment.start.x, segment.start.y, BLIT.ALIGN.Center, dot.width /2, dot.height/2);
+            }
 
             context.save();
             context.translate(mid.x, mid.y);
             context.rotate(segment.angle());
-            BLIT.draw(context, images.line, 0, 0, BLIT.ALIGN.Center, length, images.line.height, BLIT.MIRROR.None, tint);
+            var lineImage = this.powerBar.isEmpty() ? images.lineBad : images.line;
+            BLIT.draw(context, lineImage, 0, 0, BLIT.ALIGN.Center, length, lineImage.height / 2, BLIT.MIRROR.None);
             context.restore();
         }
+        context.restore();
     }
 
     BeanPatch.prototype.selectionToPoly = function (selection, bounds, includeLastTouch) {
@@ -300,7 +335,7 @@ var GAME = (function () {
 
     BeanPatch.prototype.selectBean = function (bean) {
         if (this.openLoop) {
-            bean.selected = true;
+            bean.select();
             this.openLoop.push(bean);
             this.sounds.select();
         }
@@ -326,9 +361,9 @@ var GAME = (function () {
 
         for (var b = 0; b < this.beans.length; ++b) {
             var bean = this.beans[b];
-            if (!bean.selected) {
+            if (!bean.isSelected()) {
                 if (isInPoly(poly, bean.position)) {
-                    bean.selected = true;
+                    bean.select();
                 }
             }
         }
@@ -338,7 +373,7 @@ var GAME = (function () {
             var bean = otherPatch.beans[c];
 
             if (isInPoly(poly, bean.position)) {
-                bean.selected = false;
+                bean.unselect();
                 otherPatch.captured.push(bean);
             }
         }
@@ -353,7 +388,7 @@ var GAME = (function () {
         this.closeDraw = null;
         for (var b = 0; b < this.beans.length; ++b) {
             var bean = this.beans[b];
-            if (bean.selected && this.closedLoop.indexOf(bean) < 0) {
+            if (bean.isSelected() && this.closedLoop.indexOf(bean) < 0) {
                 this.closedLoop.push(bean);
             }
         }
@@ -424,7 +459,7 @@ var GAME = (function () {
 
     BeanPatch.prototype.update = function (elapsed, bounds, otherPatch, touches) {
         if (this.closeDraw != null) {
-            if (this.pendingCaptures) {
+            if (this.pendingCaptures > 0) {
                 var before = Math.floor(this.closeDraw / CAPTURE_DELAY),
                     after = Math.floor((this.closeDraw - elapsed) / CAPTURE_DELAY);
                 if (before != after) {
@@ -441,6 +476,11 @@ var GAME = (function () {
         }
         for (var a = 0; a < this.beans.length; ++a) {
             this.beans[a].update(elapsed);
+        }
+        if (this.captured) {
+            for (var c = 0; c < this.captured.length; ++c) {
+                this.captured[c].update(elapsed);
+            }
         }
 
         this.lowPowerWarningTimer -= elapsed;
@@ -464,7 +504,7 @@ var GAME = (function () {
                     if (distance < BEAN_RADIUS) {
                         var powerStep = (this.openLoop.length > 0 ? R2.pointDistance(prev, bean.position) : 0),
                             lowPower = (power + powerStep) > this.powerBar.level;
-                        if (!bean.selected && !bean.captured) {
+                        if (!bean.isSelected() && !bean.captured) {
                             if (!lowPower) {
                                 if (this.selectBean(bean)) {
                                     power += powerStep;
@@ -495,7 +535,7 @@ var GAME = (function () {
         } else {
             if (this.openLoop) {
                 for (var o = 0; o < this.openLoop.length; ++o) {
-                    this.openLoop[o].selected = false;
+                    this.openLoop[o].unselect();
                 }
             }
             this.openLoop = [];
@@ -513,17 +553,17 @@ var GAME = (function () {
         }
     }
 
-    BeanPatch.prototype.drawSelections = function (context, images, bounds, opposite) {
+    BeanPatch.prototype.drawSelections = function (context, images, bounds, opposite, index) {
         if (this.openLoop) {
-            this.drawSelection(context, images, bounds, this.openLoop, false, opposite);
+            this.drawSelection(context, images, bounds, this.openLoop, false, opposite, index);
         }
         if (this.closedLoop) {
-            this.drawSelection(context, images, bounds, this.closedLoop, true, opposite);
+            this.drawSelection(context, images, bounds, this.closedLoop, true, opposite, index);
         }
     }
 
     BeanPatch.prototype.draw = function (context, images, bounds, swapped, patchIndex) {
-        this.drawSelections(context, images, bounds, false);
+        this.drawSelections(context, images, bounds, false, patchIndex);
         for (var b = 0; b < this.beans.length; ++b) {
             this.beans[b].draw(context, images, bounds, false);
         }
@@ -535,8 +575,8 @@ var GAME = (function () {
         this.powerBar.draw(context, images, bounds, swapped, patchIndex === 0);
     }
 
-    BeanPatch.prototype.drawOpposite = function (context, images, bounds) {
-        this.drawSelections(context, images, bounds, true);
+    BeanPatch.prototype.drawOpposite = function (context, images, bounds, patchIndex) {
+        this.drawSelections(context, images, bounds, true, patchIndex);
     }
 
     function randomPoint(entropy) {
@@ -580,6 +620,9 @@ var GAME = (function () {
         this.winSound = new BLORT.Noise("sounds/SomeoneWon.wav");
         this.startSound = new BLORT.Noise("sounds/StartSplatter.wav");
 
+        this.titleBackground = this.batch.load("titleBackground.jpg");
+        this.gameBackground = this.batch.load("gameBackground.jpg");
+
         this.batch.commit();
     }
 
@@ -588,10 +631,11 @@ var GAME = (function () {
             var patch = this.patches[p];
             patch.reset();
             for (var b = 0; b < BEANS_PER_PLAYER; ++b) {
-                patch.sprout(this.entropy, this.size);
+                patch.sprout(this.size, this.images[p], this.entropy);
             }
         }
         this.currentScreen = null;
+        this.background = this.gameBackground;
     }
 
     Game.prototype.postLoad = function () {
@@ -638,7 +682,8 @@ var GAME = (function () {
         if (this.music === null) {
             if (this.track.isLoaded()) {
                 this.music = this.track;
-                //this.music.play();
+                this.music.setVolume(0.3);
+                this.music.play();
             }
         } else {
         }
@@ -771,6 +816,7 @@ var GAME = (function () {
 
     Game.prototype.startEndGame = function (movelessIndex, winnerIndex) {
         this.currentScreen = new GameOverScreen(movelessIndex, winnerIndex);
+        this.winSound.play();
     }
 
     Game.prototype.drawHUD = function (context, width, height, patchIndex) {
@@ -842,18 +888,32 @@ var GAME = (function () {
             return;
         }
 
+        var background = this.background,
+            centerX = width / 2,
+            centerY = height / 2,
+            scale = height / background.height;
+        context.save();
+        if (this.swapped) {
+            scale = width / background.height;
+            context.rotate(Math.PI / 2);
+            centerX = height / 2;
+            centerY = -width / 2;
+        }
+        BLIT.draw(context, background, centerX, centerY, BLIT.ALIGN.Center, background.width * scale, background.height * scale);
+        context.restore();
+
         context.save();
         context.strokeStyle = "rgba(128, 128, 128, 255)";
         if (this.swapped) {
-            context.strokeRect(0, this.split, width, 1);
+            //context.strokeRect(0, this.split, width, 1);
             context.translate(0, this.split);
             context.scale(1, -1);
         } else {
-            context.strokeRect(this.split, 0, 1, height);
+            //context.strokeRect(this.split, 0, 1, height);
             context.translate(this.split, 0);
             context.scale(-1, 1);
         }
-        this.patches[1].drawOpposite(context, this.images[1], this.bounds);
+        this.patches[1].drawOpposite(context, this.images[1], this.bounds, 1);
         this.patches[0].draw(context, this.images[0], this.bounds, this.swapped, 0);
         context.restore();
         context.save();
@@ -862,7 +922,7 @@ var GAME = (function () {
         } else {
             context.translate(this.split, 0);
         }
-        this.patches[0].drawOpposite(context, this.images[0], this.bounds);
+        this.patches[0].drawOpposite(context, this.images[0], this.bounds, 0);
         this.patches[1].draw(context, this.images[1], this.bounds, this.swapped, 1);
         context.restore();
 
