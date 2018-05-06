@@ -15,9 +15,61 @@ var GAME = (function () {
         POINTS_PER_CAPTURE = 100,
         BEANLESS_BONUS = 500;
 
-    function Images(batch) {
-        this.bean = batch.load("bean.png");
-        this.line = batch.load("lineGlow.png");
+    var tune = new BLORT.Tune("sounds/BattleBeans_Music.ogg");
+
+
+    function Images(batch, index, other) {
+        this.bean = index ? other.bean : batch.load("bean.png");
+        this.line = index ? other.line : batch.load("lineGlow.png");
+    }
+
+    function makeImages(batch) {
+        var images = new Images(batch, 0, null);
+        return [
+            images,
+            new Images(batch, 1, images)
+        ];
+    }
+
+    function Sounds(steals, player) {
+        this.entropy = ENTROPY.makeRandom();
+        this.steals = steals;
+        this.selects = [
+            //new BLORT.Noise("sounds/P" + player + "_SelectBean_01.wav"),
+            //new BLORT.Noise("sounds/P" + player + "_SelectBean_02.wav"),
+            //new BLORT.Noise("sounds/P" + player + "_SelectBean_03.wav")
+        ];
+        this.powerDowns = [
+            //new BLORT.Noise("sounds/P" + player + "_OutOfPower.wav")
+        ];
+    }
+
+    Sounds.prototype.play = function (set) {
+        this.entropy.randomElement(set).play();
+    }
+
+    Sounds.prototype.select = function () {
+        this.play(this.selects);
+    }
+
+    Sounds.prototype.steal = function () {
+        this.play(this.steals);
+    }
+
+    Sounds.prototype.powerDown = function () {
+        this.play(this.powerDowns);
+    }
+
+    function makeSounds() {
+        var steals = [
+                //new BLORT.Noise("sounds/BeanStolen_01.wav"),
+                //new BLORT.Noise("sounds/BeanStolen_02.wav"),
+                //new BLORT.Noise("sounds/BeanStolen_03.wav"),
+            ];
+        return [
+            new Sounds(steals, "1"),
+            new Sounds(steals, "2")
+        ];
     }
 
     function Bean(position, angle, size) {
@@ -42,6 +94,10 @@ var GAME = (function () {
             tint
         );
         context.restore();
+    }
+
+    Bean.prototype.update = function (elapsed) {
+
     }
 
     function PowerBar() {
@@ -364,6 +420,10 @@ var GAME = (function () {
                 this.finalizeLoop(otherPatch);
             }
         }
+        for (var a = 0; a < this.beans.length; ++a) {
+            this.beans[a].update(elapsed);
+        }
+
         this.lowPowerWarningTimer -= elapsed;
         var power = 0, pending = 0, prev = null;
         if (this.openLoop && this.openLoop.length > 0) {
@@ -492,7 +552,8 @@ var GAME = (function () {
             self.postLoad();
         });
 
-        this.images = new Images(this.batch);
+        this.images = makeImages(this.batch);
+        this.sounds = makeSounds();
 
         this.batch.commit();
     }
@@ -759,8 +820,8 @@ var GAME = (function () {
             context.translate(this.split, 0);
             context.scale(-1, 1);
         }
-        this.patches[1].drawOpposite(context, this.images, this.bounds);
-        this.patches[0].draw(context, this.images, this.bounds, this.swapped, 0);
+        this.patches[1].drawOpposite(context, this.images[1], this.bounds);
+        this.patches[0].draw(context, this.images[0], this.bounds, this.swapped, 0);
         context.restore();
         context.save();
         if (this.swapped) {
@@ -768,8 +829,8 @@ var GAME = (function () {
         } else {
             context.translate(this.split, 0);
         }
-        this.patches[0].drawOpposite(context, this.images, this.bounds);
-        this.patches[1].draw(context, this.images, this.bounds, this.swapped, 1);
+        this.patches[0].drawOpposite(context, this.images[0], this.bounds);
+        this.patches[1].draw(context, this.images[1], this.bounds, this.swapped, 1);
         context.restore();
 
         this.drawHUD(context, width, height, 0);
