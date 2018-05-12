@@ -691,13 +691,13 @@ var GAME = (function () {
     }
 
     Game.prototype.update = function (now, elapsed, keyboard, pointer, width, height) {
-        if (this.music === null) {
+        if (this.music === null && pointer.activated()) {
             if (this.track.isLoaded()) {
                 this.music = this.track;
                 this.music.setVolume(0.0);
                 this.music.play();
             }
-        } else if (this.currentScreen) {
+        } else if (this.currentScreen && this.music !== null) {
             this.music.setVolume(this.currentScreen.volume);
         }
 
