@@ -15,7 +15,7 @@ var GAME = (function () {
         POINTS_PER_CAPTURE = 100,
         DEFAULT_FRAME_TIME = 32,
         BEANLESS_BONUS = 500,
-        GAME_VOLUME = 0.3,
+        GAME_VOLUME = 0.4,
         TITLE_VOLUME = 0.9;
 
     function Images(batch, index, other) {
@@ -762,8 +762,9 @@ var GAME = (function () {
     }
 
     function GameOverScreen(movelessIndex, winnerIndex) {
-        this.showDuration = 1000;
-        this.showTime = this.showDuration;
+        this.showDuration = 2000;
+        this.gameOverSoundTime = 1000;
+        this.showTime = this.showDuration + this.gameOverSoundTime;
         this.isOverlay = true;
         this.isTitle = false;
         this.titleBackground = false;
@@ -779,7 +780,13 @@ var GAME = (function () {
             this.volume = TITLE_VOLUME;
             return("RESTART");
         } else {
-            this.volume = interpolate(TITLE_VOLUME, GAME_VOLUME, this.showTime / this.showDuration)
+            var volume = TITLE_VOLUME;
+            if (this.showTime > this.showDuration) {
+                volume = GAME_VOLUME;
+            } else if (this.showTime > 0) {
+                volume = interpolate(GAME_VOLUME, TITLE_VOLUME, this.showTime / this.showDuration);
+            }
+            this.volume = volume;
         }
         return(null);
     }
@@ -822,7 +829,7 @@ var GAME = (function () {
         this.titleBackground = true;
         this.drawInHUD = false;
         this.showTime = 1000;
-        this.volume = 1;
+        this.volume = TITLE_VOLUME;
     }
 
     TitleScreen.prototype.update = function (elapsed, keyboard, pointer, width, height, swapped) {
@@ -862,7 +869,7 @@ var GAME = (function () {
             this.volume = GAME_VOLUME;
             return "START";            
         }
-        this.volume = interpolate(GAME_VOLUME, TITLE_VOLUME, this.fadeTime / this.fadeDuration)
+        this.volume = interpolate(TITLE_VOLUME, GAME_VOLUME, this.fadeTime / this.fadeDuration)
         return null;
     }
 
