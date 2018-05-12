@@ -17,8 +17,8 @@ var GAME = (function () {
         BEANLESS_BONUS = 500,
         GAME_VOLUME = 0.4,
         TITLE_VOLUME = 0.9,
-        RED_COLOR = "rgba(255,0,51)",
-        BLUE_COLOR = "rgba(0,170,255)";
+        RED_COLOR = "rgba(255,0,51,255)",
+        BLUE_COLOR = "rgba(0,170,255,255)";
 
     function Images(batch, index, other) {
         var BEAN_FRAMES = 12,
@@ -96,7 +96,7 @@ var GAME = (function () {
     function Bean(position, size, images, entropy) {
         this.position = position;
         var range = Math.PI / 20;
-        this.angle = (-Math.PI / 2) -range + 2 * range * entropy.random();
+        this.angle = -range + 2 * range * entropy.random();
         this.rate = entropy.random() + 0.1;
         this.idle = entropy.randomElement(images.beans).setupPlayback(DEFAULT_FRAME_TIME, true, entropy.randomInt(1000));
         this.selectFlip = images.select;
@@ -117,11 +117,11 @@ var GAME = (function () {
         return this.sel !== null;
     }
 
-    Bean.prototype.draw = function (context, images, bounds, captured) {
+    Bean.prototype.draw = function (context, images, bounds, captured, swapped) {
         context.save();
         var pos = bounds.interpolate(this.position);
         context.translate(pos.x, pos.y);
-        context.rotate(this.angle);
+        context.rotate(this.angle - (swapped ? 0 : Math.PI / 2));
         var flip = this.isSelected() ? this.sel : this.idle,
             scaleFactor = this.isSelected() || captured ? 2 : 2 * 64/96,
             size = this.size * scaleFactor;
@@ -569,11 +569,11 @@ var GAME = (function () {
     BeanPatch.prototype.draw = function (context, images, bounds, swapped, patchIndex) {
         this.drawSelections(context, images, bounds, false, patchIndex);
         for (var b = 0; b < this.beans.length; ++b) {
-            this.beans[b].draw(context, images, bounds, false);
+            this.beans[b].draw(context, images, bounds, false, swapped);
         }
         if (this.captured) {
             for (var c = 0; c < this.captured.length; ++c) {
-                this.captured[c].draw(context, images, bounds, true);
+                this.captured[c].draw(context, images, bounds, true, swapped);
             }
         }
         this.powerBar.draw(context, images, bounds, swapped, patchIndex === 0);
