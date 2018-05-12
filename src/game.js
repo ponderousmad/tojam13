@@ -843,7 +843,7 @@ var GAME = (function () {
 
     TitleScreen.prototype.draw = function (context, centerX, centerY, scale) {
         var flip = this.open !== null ? this.open : this.idle;
-        flip.draw(context, centerX, centerY, BLIT.ALIGN.Center, flip.width * scale, flip.height * scale);
+        flip.draw(context, centerX, centerY, BLIT.ALIGN.Center, flip.width() * scale, flip.height() * scale);
     }
 
     function FadeScreen() {
