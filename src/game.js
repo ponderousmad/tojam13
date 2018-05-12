@@ -5,7 +5,7 @@ var GAME = (function () {
         CLOSE_DRAW_TIMER = 500,
         CAPTURE_DELAY = 100,
         LOW_POWER_WARNING_COOLDOWN = 500,
-        BORDER_FRACTION = 0.05,
+        BORDER_FRACTION = 0.07,
         BEAN_FRACTION = 0.04,
         BEANS_PER_PLAYER = 55,
         MAX_POWER = 5,
@@ -16,7 +16,9 @@ var GAME = (function () {
         DEFAULT_FRAME_TIME = 32,
         BEANLESS_BONUS = 500,
         GAME_VOLUME = 0.4,
-        TITLE_VOLUME = 0.9;
+        TITLE_VOLUME = 0.9,
+        RED_COLOR = "rgba(255,0,51)",
+        BLUE_COLOR = "rgba(0,170,255)";
 
     function Images(batch, index, other) {
         var BEAN_FRAMES = 12,
@@ -27,11 +29,11 @@ var GAME = (function () {
             new BLIT.Flip(batch, "beanIdle/beanIdleB_", BEAN_FRAMES, 2),
             new BLIT.Flip(batch, "beanIdle/beanIdleC_", BEAN_FRAMES, 2)
         ];
-        var selectBase = index ? "beanSelectRed/beanSelectRed_" : "beanSelectBlue/beanSelectBlue_";
+        var selectBase = index ? "beanSelectBlue/beanSelectBlue_" : "beanSelectRed/beanSelectRed_";
         this.select = new BLIT.Flip(batch, selectBase, SELECT_FRAMES, 2);
-        this.death = new BLIT.Flip(batch, "beanDeath/beanDeath_", DEATH_FRAMES, 2);
-        this.line = batch.load(index ? "line_red.png" : "line_blue.png");
-        this.dot = batch.load(index ? "dot_red.png" : "dot_blue.png");
+        this.death = index ? other.death : new BLIT.Flip(batch, "beanDeath/beanDeath_", DEATH_FRAMES, 2);
+        this.line = batch.load(index ? "line_blue.png" : "line_red.png");
+        this.dot = batch.load(index ? "dot_blue.png" : "dot_red.png");
         this.lineBad = index ? other.lineBad : batch.load("line_grey.png");
     }
 
@@ -94,7 +96,7 @@ var GAME = (function () {
     function Bean(position, size, images, entropy) {
         this.position = position;
         var range = Math.PI / 20;
-        this.angle = -range + 2 * range * entropy.random();
+        this.angle = (-Math.PI / 2) -range + 2 * range * entropy.random();
         this.rate = entropy.random() + 0.1;
         this.idle = entropy.randomElement(images.beans).setupPlayback(DEFAULT_FRAME_TIME, true, entropy.randomInt(1000));
         this.selectFlip = images.select;
@@ -263,7 +265,7 @@ var GAME = (function () {
         if (closed) {
             context.save();
             context.beginPath();
-            context.fillStyle = index ? "rgba(255,0,51)" : "rgba(0,170,255)";
+            context.fillStyle = index ? BLUE_COLOR : RED_COLOR;
             for (var s = 0; s < poly.length; ++s) {
                 var segment = poly[s];
                 if (s === 0) {
@@ -626,9 +628,12 @@ var GAME = (function () {
         this.gameBackground = this.batch.load("gameBackground.jpg");
 
         var CAN_IDLE_FRAMES = 24,
-            CAN_OPEN_FRAMES = 29;
+            CAN_OPEN_FRAMES = 29,
+            SPIN_FRAMES = 24;
         this.canIdle = new BLIT.Flip(this.batch, "canIdle/canIdle_", CAN_IDLE_FRAMES, 2);
         this.canOpen = new BLIT.Flip(this.batch, "canOpen/canOpen_", CAN_OPEN_FRAMES, 2);
+        this.spinBean = new BLIT.Flip(this.batch, "spinningBean/spinningBean_", SPIN_FRAMES, 2);
+        this.spinPlay = this.spinBean.setupPlayback(DEFAULT_FRAME_TIME, true);
 
         this.batch.commit();
     }
@@ -699,6 +704,11 @@ var GAME = (function () {
             }
         } else if (this.currentScreen && this.music !== null) {
             this.music.setVolume(this.currentScreen.volume);
+        }
+
+
+        if (this.spinPlay) {
+            this.spinPlay.update(elapsed);
         }
 
         var border = Math.floor(height * BORDER_FRACTION);
@@ -927,17 +937,23 @@ var GAME = (function () {
         if (rotation) {
             context.rotate(rotation); 
         }
-        context.font = "20px sans-serif";
+        context.font = "25px sans-serif";
         context.textBaseline = "top";
-        context.fillStyle = patchIndex ? "rgba(255,0,0,255)" : "rgba(0,0,255,255)";
-        var reference = 0;
+        context.fillStyle = patchIndex ? BLUE_COLOR : RED_COLOR;
+        var HALF_SPIN = 20,
+            SPIN_SIZE = 2 * HALF_SPIN,
+            spinX = HALF_SPIN,
+            reference = SPIN_SIZE;
         if (this.swapped) {
-            reference = size;
+            reference = size - SPIN_SIZE;
+            spinX = size - HALF_SPIN
             context.textAlign = "end";
         } else {
             context.textAlign = "start";
+
         }
-        context.fillText("Score: " + patch.score(), reference, 2);
+        this.spinPlay.draw(context, spinX, HALF_SPIN, BLIT.ALIGN.Center, SPIN_SIZE, SPIN_SIZE);
+        context.fillText(patch.score(), reference, 2);
 
         if (this.currentScreen && this.currentScreen.drawInHUD) {
             this.currentScreen.draw(context, size, this.split, this.swapped, patchIndex);
